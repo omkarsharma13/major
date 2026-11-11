@@ -41,7 +41,6 @@ def extract_price(value):
         n = float(value)
         return n if 0 < n < 100000 else None
     s = str(value).replace(",", "").strip()
-    # Avoid extracting pack sizes, discounts or unrelated numeric labels.
     m = re.search(r"(?:₹|Rs\.?\s*|INR\s*)(\d+(?:\.\d{1,2})?)", s, re.I)
     if not m and re.fullmatch(r"\d+(?:\.\d{1,2})?", s):
         m = re.fullmatch(r"(\d+(?:\.\d{1,2})?)", s)
@@ -54,8 +53,17 @@ def extract_price(value):
         return None
 
 
+def clean_product_name(name):
+    name = str(name or "")
+    # Remove appended marketplace rating metadata, not genuine pack sizes.
+    name = re.sub(r"\b\d+(?:\.\d+)?\s+\d[\d,]*\s+ratings?\b", " ", name, flags=re.I)
+    name = re.sub(r"\b\d[\d,]*\s+ratings?\b", " ", name, flags=re.I)
+    name = re.sub(r"\s*[-|·]\s*(?:\d+(?:\.\d+)?\s*)?\d[\d,]*\s+ratings?\b", " ", name, flags=re.I)
+    return " ".join(name.split()).strip(" -|·")
+
+
 def clean_name(name):
-    name = str(name or "").lower()
+    name = clean_product_name(name).lower()
     name = re.sub(r"\b(?:₹|rs\.?|inr)\s*\d+(?:\.\d+)?\b", " ", name)
     name = re.sub(r"[^a-z0-9.]+", " ", name)
     return " ".join(name.split())
@@ -88,7 +96,7 @@ def is_relevant_product(query, name):
 def add_product(results, name, price, query=None, url=None):
     if not name or price is None:
         return
-    name = " ".join(str(name).split()).strip()
+    name = clean_product_name(name)
     if len(name) < 4 or (query and not is_relevant_product(query, name)):
         return
     if clean_name(name) in {"add", "buy", "cart", "wishlist", "delivery", "select location"}:
@@ -199,7 +207,6 @@ def _dom_extract(page, selectors, query, platform):
                 card = cards.nth(i)
                 text = safe_text(card, 700)
                 price = extract_price(text)
-                # Check common price attributes/elements when the price is not plain card text.
                 if price is None:
                     for attr in ("data-price", "data-selling-price", "content", "aria-label"):
                         try:
@@ -274,7 +281,6 @@ def _extract_page_text(page, query):
 
 def _finish_extraction(page, query, network_payloads, selectors, platform):
     results = []
-    # Prefer the actual structured API response when available.
     for _url, payload in network_payloads:
         extract_products_from_json(payload, query, results)
         if len(results) >= MAX_PRODUCTS:
@@ -348,7 +354,7 @@ def scrape_bigbasket(page, query):
     payloads, ok = _open_search(page, url, "BigBasket")
     if not ok: return []
     return _finish_extraction(page, query, payloads,
-        ["[data-qa='product']", "[data-testid*='product']", "li[class*='product' i]", "[class*='ProductCard']", "[class*='product-card']", "[class*='SKUDeck']", "[class*='Product__]", "a[href*='/pd/']", "[itemtype*='Product']"], "BigBasket")
+        ["[data-qa='product']", "[data-testid*='product']", "li[class*='product' i]", "[class*='ProductCard']", "[class*='product-card']", "[class*='SKUDeck']", "[class*='Product__']", "a[href*='/pd/']", "[itemtype*='Product']"], "BigBasket")
 
 
 def _best_match(base_name, candidates, used):
